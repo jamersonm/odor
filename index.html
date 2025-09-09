@@ -138,7 +138,7 @@
             try {
                 // Filtro para o beacon
                 const options = {
-                    filters: [{ namePrefix: 'MEU_BEACON' }],
+                    filters: [{ namePrefix: 'ODOR' }],
                     acceptAllAdvertisements: false,
                 };
                 
@@ -149,7 +149,7 @@
 
                 // Evento para quando um pacote de publicidade é recebido
                 navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
-                    if (event.device.name === 'MEU_BEACON') {
+                    if (event.device.name === 'ODOR') {
                         statusMessage.textContent = 'Beacon encontrado! Coletando dados...';
                         
                         // Acessa os dados do fabricante
