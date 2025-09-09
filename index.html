@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor BLE</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container {
+            max-width: 900px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="container bg-white rounded-xl shadow-lg p-6 w-full">
+        <h1 class="text-3xl font-semibold text-gray-800 text-center mb-6">Monitor do Beacon BLE</h1>
+        
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
+            <button id="scanButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform duration-200 active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                Iniciar Escaneamento
+            </button>
+            <button id="stopButton" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform duration-200 active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                Parar Escaneamento
+            </button>
+        </div>
+        
+        <p id="statusMessage" class="text-center text-gray-600 mb-6"></p>
+
+        <div class="relative w-full h-80">
+            <canvas id="realtimeChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Variáveis globais para o gráfico e o estado do escaneamento
+        let chart;
+        let isScanning = false;
+        let bleScanner; // Objeto para controlar o escaneamento
+        
+        // Elementos do DOM
+        const scanButton = document.getElementById('scanButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const chartCanvas = document.getElementById('realtimeChart');
+
+        // Configuração inicial do gráfico com Chart.js
+        const setupChart = () => {
+            const ctx = chartCanvas.getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Valor do Sensor 1',
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                            data: [],
+                            fill: false,
+                        },
+                        {
+                            label: 'Valor do Sensor 2',
+                            borderColor: 'rgb(249, 115, 22)',
+                            backgroundColor: 'rgba(249, 115, 22, 0.2)',
+                            data: [],
+                            fill: false,
+                        }
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Tempo (segundos)'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Valor'
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 0 // Sem animação para updates em tempo real
+                    }
+                }
+            });
+        };
+
+        // Função para atualizar o gráfico com novos dados
+        const updateChart = (data1, data2) => {
+            const time = chart.data.labels.length * 5; // A cada 5s
+            
+            // Limitar os dados para 20 pontos no gráfico para melhor visualização
+            const maxPoints = 20;
+            if (chart.data.labels.length > maxPoints) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift();
+            }
+
+            chart.data.labels.push(time);
+            chart.data.datasets[0].data.push(data1);
+            chart.data.datasets[1].data.push(data2);
+            chart.update();
+        };
+
+        // Função para iniciar o escaneamento BLE
+        const startScan = async () => {
+            if (isScanning) return;
+            isScanning = true;
+            statusMessage.textContent = 'Procurando por beacons...';
+            scanButton.disabled = true;
+            stopButton.disabled = false;
+
+            // Verifica se a API Web Bluetooth é suportada no navegador/ambiente
+            if (!('bluetooth' in navigator) || !navigator.bluetooth.requestLEScan) {
+                statusMessage.textContent = 'Erro: A API Web Bluetooth não é suportada por este navegador ou ambiente. Por favor, use um navegador compatível (Chrome, Edge) e garanta que a página está sendo servida por HTTPS.';
+                isScanning = false;
+                scanButton.disabled = false;
+                stopButton.disabled = true;
+                return;
+            }
+
+            try {
+                // Filtro para o beacon
+                const options = {
+                    filters: [{ namePrefix: 'ODOR' }],
+                    acceptAllAdvertisements: false,
+                };
+                
+                // Inicia o escaneamento e obtém o objeto scanner
+                bleScanner = await navigator.bluetooth.requestLEScan(options);
+
+                statusMessage.textContent = `Escaneando... O nome do dispositivo é: ${bleScanner.name}`;
+
+                // Evento para quando um pacote de publicidade é recebido
+                navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
+                    if (event.device.name === 'ODOR') {
+                        statusMessage.textContent = 'Beacon encontrado! Coletando dados...';
+                        
+                        // Acessa os dados do fabricante
+                        if (event.manufacturerData.has(0xFFFF)) { // ID da Espressif
+                            const manufacturerData = event.manufacturerData.get(0xFFFF);
+                            
+                            // Parsea os dados do sensor
+                            // Supondo que os primeiros 4 bytes sejam 2 inteiros de 16 bits (ex: temperatura, umidade)
+                            // Ajuste esta lógica de acordo com o formato dos seus dados
+                            if (manufacturerData.byteLength >= 4) {
+                                const sensorData1 = manufacturerData.getUint16(0, true); // little-endian
+                                const sensorData2 = manufacturerData.getUint16(2, true); // little-endian
+                                updateChart(sensorData1, sensorData2);
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                if (error.name === 'NotAllowedError') {
+                    statusMessage.textContent = 'Permissão negada. Por favor, permita o acesso ao Bluetooth nas configurações do seu navegador.';
+                } else if (error.name === 'NotFoundError') {
+                    statusMessage.textContent = 'Nenhum dispositivo encontrado. Certifique-se de que o beacon está próximo e ligado.';
+                } else {
+                    statusMessage.textContent = `Erro de escaneamento: ${error.message}`;
+                }
+                isScanning = false;
+                scanButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        };
+        
+        // Função para parar o escaneamento BLE
+        const stopScan = () => {
+            if (isScanning && bleScanner) {
+                bleScanner.stop();
+                isScanning = false;
+                statusMessage.textContent = 'Escaneamento parado.';
+                scanButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        };
+
+        // Adiciona os event listeners aos botões
+        scanButton.addEventListener('click', startScan);
+        stopButton.addEventListener('click', stopScan);
+
+        // Configura o gráfico ao carregar a página
+        window.onload = setupChart;
+    </script>
+
+</body>
+</html>
