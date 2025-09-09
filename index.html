@@ -42,6 +42,7 @@
         // Variáveis globais para o gráfico e o estado do escaneamento
         let chart;
         let isScanning = false;
+        let bleScanner; // Objeto para controlar o escaneamento
         
         // Elementos do DOM
         const scanButton = document.getElementById('scanButton');
@@ -126,7 +127,7 @@
             stopButton.disabled = false;
 
             // Verifica se a API Web Bluetooth é suportada no navegador/ambiente
-            if (!('bluetooth' in navigator)) {
+            if (!('bluetooth' in navigator) || !navigator.bluetooth.requestLEScan) {
                 statusMessage.textContent = 'Erro: A API Web Bluetooth não é suportada por este navegador ou ambiente. Por favor, use um navegador compatível (Chrome, Edge) e garanta que a página está sendo servida por HTTPS.';
                 isScanning = false;
                 scanButton.disabled = false;
@@ -135,20 +136,20 @@
             }
 
             try {
-                // Usa requestDevice() para solicitar um dispositivo conectável
+                // Filtro para o beacon
                 const options = {
-                    filters: [{ namePrefix: 'ODOR' }],
-                    optionalServices: [], // Adicione aqui se o seu beacon tiver serviços GATT
+                    filters: [{ namePrefix: 'MEU_BEACON' }],
+                    acceptAllAdvertisements: false,
                 };
                 
-                // Pede ao usuário para selecionar o dispositivo em uma caixa de diálogo
-                const device = await navigator.bluetooth.requestDevice(options);
+                // Inicia o escaneamento e obtém o objeto scanner
+                bleScanner = await navigator.bluetooth.requestLEScan(options);
 
-                statusMessage.textContent = `Conectado ao dispositivo: ${device.name}. Escaneando por pacotes...`;
+                statusMessage.textContent = `Escaneando... O nome do dispositivo é: ${bleScanner.name}`;
 
-                // Adiciona um listener para receber os pacotes de publicidade
-                device.addEventListener('advertisementreceived', (event) => {
-                    if (event.device.name === 'ODOR') {
+                // Evento para quando um pacote de publicidade é recebido
+                navigator.bluetooth.addEventListener('advertisementreceived', (event) => {
+                    if (event.device.name === 'MEU_BEACON') {
                         statusMessage.textContent = 'Beacon encontrado! Coletando dados...';
                         
                         // Acessa os dados do fabricante
@@ -166,11 +167,6 @@
                         }
                     }
                 });
-                
-                // Inicia o scan após o dispositivo ter sido selecionado
-                await device.watchAdvertisements();
-
-
             } catch (error) {
                 if (error.name === 'NotAllowedError') {
                     statusMessage.textContent = 'Permissão negada. Por favor, permita o acesso ao Bluetooth nas configurações do seu navegador.';
@@ -187,10 +183,8 @@
         
         // Função para parar o escaneamento BLE
         const stopScan = () => {
-            // Com requestDevice(), não há uma função stopLEScan(). O escaneamento
-            // é interrompido automaticamente quando a página é fechada ou o dispositivo
-            // fica fora de alcance. Este botão apenas reseta o estado da UI.
-            if (isScanning) {
+            if (isScanning && bleScanner) {
+                bleScanner.stop();
                 isScanning = false;
                 statusMessage.textContent = 'Escaneamento parado.';
                 scanButton.disabled = false;
